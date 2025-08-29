@@ -14,7 +14,10 @@ const usersRouter = require('./controllers/users');
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || true, // set FE URL in prod, e.g. 'http://localhost:5173'
+  credentials: true,
+}));
 app.use(express.json());
 app.use(morgan('dev'));
 
@@ -27,14 +30,40 @@ app.use('/api/users', usersRouter);
 // 404 handler
 app.use((req, res) => res.status(404).json({ error: 'Not Found' }));
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGODB_URI);
-mongoose.connection.on('connected', () => {
-  console.log(`Connected to MongoDB ${mongoose.connection.name}.`);
+// Central error handler (last)
+app.use((err, req, res, next) => {
+  console.error(err); // avoid noisy stacks in prod if you prefer
+  const status = err.status || 500;
+  res.status(status).json({ error: err.message || 'Server error' });
 });
 
-// Boot server and listen on port 3000
+// --- Connect to MongoDB + Boot ---
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Express API listening on port ${PORT}`);
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  console.error('Missing MONGODB_URI in environment');
+  process.exit(1);
+}
+
+(async () => {
+  try {
+    await mongoose.connect(MONGODB_URI);
+    console.log(`Connected to MongoDB ${mongoose.connection.name}.`);
+
+    app.listen(PORT, () => {
+      console.log(`Express API listening on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error('Failed to connect to MongoDB:', err.message);
+    process.exit(1);
+  }
+})();
+
+// Connection event logs
+mongoose.connection.on('error', (e) => {
+  console.error('MongoDB connection error:', e);
+});
+mongoose.connection.on('disconnected', () => {
+  console.warn('MongoDB disconnected');
 });
