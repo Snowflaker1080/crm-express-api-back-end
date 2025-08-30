@@ -1,74 +1,65 @@
+// controllers/users.js
 const express = require("express");
 const router = express.Router();
+const mongoose = require("mongoose");
 
-const mongoose = require('mongoose');
-const User = require('../models/User');
-const Contact = require('../models/Contact');
-const Group = require('../models/Group');
+const User = require("../models/User");
+const Contact = require("../models/Contact");
+const Group = require("../models/Group");
 
 const verifyToken = require("../middleware/verify-token");
 
-router.use(verifyToken); // Apply auth to everything in this router
+// Apply auth to everything in this router
+router.use(verifyToken);
 
 /**
  * GET /api/users
- * MVP privacy, return ONLY the signed-in user (no global user list).
- * Later add roles, obtain a full list behind an admin check.
+ * MVP privacy: return ONLY the signed-in user (array shape for "list" parity)
  */
 router.get("/", async (req, res) => {
   try {
-    const user = await User.findById(
-      req.user._id,
-      "username email createdAt"
-    ).lean();
-    if (!user) return res.status(404).json({ error: "User not found" });
+    const user = await User.findById(req.user._id)
+      .select("username email createdAt")
+      .lean();
 
-    return res.json([user]); // array to keep response shape consistent with "list"
+    if (!user) return res.status(404).json({ error: "User not found" });
+    return res.json([user]);
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message || "Server error" });
   }
 });
 
 /**
- * GET /api/users/me
- * Convenience endpoint to fetch the current user.
- * Supports ?include=counts to get counts of related entities.
+ * GET /api/users/me?include=counts
+ * Convenience endpoint to fetch the current user (and optional counts)
  */
 router.get("/me", async (req, res) => {
   try {
-    const includeCounts = (req.query.include || "")
-      .toString()
-      .split(",")
-      .includes("counts");
+    const includeCounts = String(req.query.include || "") === "counts";
 
-    const user = await User.findById(
-      req.user._id,
-      "username email createdAt"
-    ).lean();
+    // verifyToken has already loaded the user; avoid re-query unless you prefer
+    const user = req.user; // selected without password in verifyToken
     if (!user) return res.status(404).json({ error: "User not found" });
 
     if (!includeCounts) return res.json({ user });
 
-    const [contactsCount, groupsCount] = await Promise.all([
-      Contact.countDocuments({ owner: req.user._id }),
+    const [groupsCount, contactsCount] = await Promise.all([
       Group.countDocuments({ owner: req.user._id }),
+      Contact.countDocuments({ owner: req.user._id }),
     ]);
 
     return res.json({
       user,
-      counts: {
-        contacts: contactsCount,
-        groups: groupsCount,
-      },
+      counts: { groups: groupsCount, contacts: contactsCount },
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message || "Server error" });
   }
 });
 
 /**
  * GET /api/users/:userId
- * Self-only access. Optionally include counts just like /me.
+ * Self-only access. Supports ?include=counts like /me.
  */
 router.get("/:userId", async (req, res) => {
   try {
@@ -77,7 +68,7 @@ router.get("/:userId", async (req, res) => {
     if (!mongoose.isValidObjectId(userId)) {
       return res.status(400).json({ error: "Invalid user id" });
     }
-    if (req.user._id !== userId) {
+    if (req.user._id.toString() !== userId) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
@@ -86,7 +77,10 @@ router.get("/:userId", async (req, res) => {
       .split(",")
       .includes("counts");
 
-    const user = await User.findById(userId, "username email createdAt").lean();
+    const user = await User.findById(userId)
+      .select("username email createdAt")
+      .lean();
+
     if (!user) return res.status(404).json({ error: "User not found" });
 
     if (!includeCounts) return res.json({ user });
@@ -98,13 +92,10 @@ router.get("/:userId", async (req, res) => {
 
     return res.json({
       user,
-      counts: {
-        contacts: contactsCount,
-        groups: groupsCount,
-      },
+      counts: { contacts: contactsCount, groups: groupsCount },
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message || "Server error" });
   }
 });
 

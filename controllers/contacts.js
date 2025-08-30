@@ -1,26 +1,15 @@
 const express = require('express');
 const router = express.Router();
-
 const Contact = require('../models/Contact');
 const Group = require('../models/Group'); // if contact groups are supported
 
 const verifyToken = require('../middleware/verify-token');
-
 router.use(verifyToken);
 
 // GET /api/contacts
 router.get('/', async (req, res, next) => {
   try {
-    const { q } = req.query;
-    const filter = { owner: req.user._id };
-    if (q) {
-      filter.$or = [
-        { firstName: new RegExp(q, 'i') },
-        { lastName: new RegExp(q, 'i') },
-        { email: new RegExp(q, 'i') }
-      ];
-    }
-    const contacts = await Contact.find(filter).lean();
+    const contacts = await Contact.find({ owner: req.user._id }).sort({ lastName: 1, firstName: 1 });
     res.json(contacts);
   } catch (err) { next(err); }
 });

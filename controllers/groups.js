@@ -1,12 +1,10 @@
 const express = require('express');
 const router = express.Router();
-
 const Group = require('../models/Group');
+
 const Contact = require('../models/Contact'); // if contact are linked to groups
 
 const verifyToken = require('../middleware/verify-token');
-
-
 router.use(verifyToken);
 
 // GET /api/groups
@@ -18,12 +16,10 @@ router.get('/', async (req, res, next) => {
 });
 
 // POST /api/groups
-router.post('/', async (req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
-    const { name, type } = req.body || {};
-    if (!name) return res.status(400).json({ error: 'Name is required' });
-    const group = await Group.create({ name, type, owner: req.user._id, members: [] });
-    res.status(201).json(group);
+    const groups = await Group.find({ owner: req.user._id }).sort({ createdAt: -1 });
+    res.json(groups);
   } catch (err) { next(err); }
 });
 

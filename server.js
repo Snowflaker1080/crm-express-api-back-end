@@ -10,14 +10,13 @@ const mongoose = require('mongoose');
 const authRouter = require('./controllers/auth');
 const testJwtRouter = require('./controllers/test-jwt');
 const usersRouter = require('./controllers/users');
+const groupsRouter = require('./controllers/groups');
+const contactsRouter = require('./controllers/contacts');
 
 const app = express();
 
 // Middleware
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || true, // set FE URL in prod, e.g. 'http://localhost:5173'
-  credentials: true,
-}));
+app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
@@ -25,17 +24,19 @@ app.use(morgan('dev'));
 app.use('/api/auth', authRouter);
 app.use('/api/test', testJwtRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/groups', groupsRouter);
+app.use('/api/contacts', contactsRouter);
 
 
-// 404 handler
-app.use((req, res) => res.status(404).json({ error: 'Not Found' }));
-
-// Central error handler (last)
+// Central error handler
 app.use((err, req, res, next) => {
   console.error(err); // avoid noisy stacks in prod if you prefer
   const status = err.status || 500;
   res.status(status).json({ error: err.message || 'Server error' });
 });
+
+// 404 handler
+app.use((req, res) => res.status(404).json({ error: 'Not Found' }));
 
 // --- Connect to MongoDB + Boot ---
 const PORT = process.env.PORT || 3000;
@@ -67,3 +68,5 @@ mongoose.connection.on('error', (e) => {
 mongoose.connection.on('disconnected', () => {
   console.warn('MongoDB disconnected');
 });
+
+module.exports = app;
