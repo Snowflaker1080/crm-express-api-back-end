@@ -7,21 +7,18 @@ const userSchema = new mongoose.Schema({
     unique: true,
     trim: true
   },
-  email:    { 
-    type: String, 
-    required: false, 
-    unique: true 
-  },
   hashedPassword: {
     type: String,
     required: true
   },
  }, { timestamps: true });
 
+ // hide hashedPassword in JSON
 userSchema.set('toJSON', {
-  transform: (document, returnedObject) => {
-    delete returnedObject.hashedPassword;
-  }
+  transform: (doc, ret) => {
+    delete ret.hashedPassword;
+    return ret;
+  },
 });
 
 module.exports = mongoose.model('User', userSchema);

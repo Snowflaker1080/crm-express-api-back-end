@@ -1,3 +1,4 @@
+// models/Contact.js
 const { Schema, model, Types } = require('mongoose');
 
 const contactSchema = new Schema(

@@ -1,6 +1,6 @@
+// server.js
 const dotenv = require('dotenv');
 dotenv.config();
-
 const express = require('express');
 const morgan = require('morgan')
 const cors = require('cors');
@@ -20,53 +20,65 @@ app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
-// API routes
+// API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/test', testJwtRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/contacts', contactsRouter);
 
+// 404 Route
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not Found' });
+});
 
-// Central error handler
-app.use((err, req, res, next) => {
-  console.error(err); // avoid noisy stacks in prod if you prefer
+// Global Error Handler
+app.use((err, req, res, next) => { // 4 args for Express to treat as error handler
+  console.error(err);
   const status = err.status || 500;
   res.status(status).json({ error: err.message || 'Server error' });
 });
 
-// 404 handler
-app.use((req, res) => res.status(404).json({ error: 'Not Found' }));
 
 // --- Connect to MongoDB + Boot ---
-const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-  console.error('Missing MONGODB_URI in environment');
+// MongoDB connection - folder name explicitly stated
+const db_url = process.env.MONGODB_URI;
+if (!db_url) {
+  console.error("Missing MONGODB_URI in environment");
   process.exit(1);
 }
 
-(async () => {
-  try {
-    await mongoose.connect(MONGODB_URI);
-    console.log(`Connected to MongoDB ${mongoose.connection.name}.`);
+// enable query + server selection debugging (optional)
+mongoose.set('debug', true);
 
+mongoose
+  .connect(db_url, { 
+    dbName: "OrbitCRMDatabase",
+    serverSelectionTimeoutMS: 15000, // fail faster while debugging
+   })
+  .then(() => {
+    console.log("Connected to MongoDB OrbitCRMDatabase");
+
+// Boot Express once DB connection is successful
+    const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
       console.log(`Express API listening on port ${PORT}`);
     });
-  } catch (err) {
-    console.error('Failed to connect to MongoDB:', err.message);
+  })
+  .catch((err) => {
+    console.error("MongoDB connection error:", err);
     process.exit(1);
-  }
-})();
+  });
 
 // Connection event logs
-mongoose.connection.on('error', (e) => {
-  console.error('MongoDB connection error:', e);
+mongoose.connection.on("connected", () => {
+  console.log(`Connected to MongoDB ${mongoose.connection.name}.`);
 });
-mongoose.connection.on('disconnected', () => {
-  console.warn('MongoDB disconnected');
+mongoose.connection.on("error", (e) => {
+  console.error("MongoDB connection error:", e);
+});
+mongoose.connection.on("disconnected", () => {
+  console.warn("MongoDB disconnected");
 });
 
 module.exports = app;

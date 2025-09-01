@@ -1,9 +1,10 @@
+// controllers/auth.js
 const express = require('express');
-const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+const router = express.Router();
 const saltRounds = 12;
 
 // POST /api/auth/sign-up
@@ -12,8 +13,11 @@ router.post('/sign-up', async (req, res) => {
     const username = (req.body.username || '').trim();
     const password = req.body.password || '';
 
-    if (!username || !password) {
-      return res.status(400).json({ error: 'username and password are required' });
+    if (username.length < 3) {
+      return res.status(400).json({ error: 'Username must be at least 3 characters' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
     const existing = await User.findOne({ username }).lean();
@@ -31,11 +35,11 @@ router.post('/sign-up', async (req, res) => {
     );
 
     return res.status(201).json({
-      user: { _id: user._id, username: user.username },
       token,
+      user: { _id: user._id, username: user.username },
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message || 'Server error' });
   }
 });
 
