@@ -21,7 +21,35 @@ router.use((req, res, next) => {
 
 const isId = mongoose.isValidObjectId;
 
-// ---------- Helpers ----------
+/* ------------------------ Helpers ------------------------ */
+
+// Basic URL normaliser for socials  // <<< socials
+function normaliseUrl(url) {
+  if (!url) return '';
+  const v = String(url).trim();
+  if (!v) return '';
+  if (/^https?:\/\//i.test(v)) return v;                     // already http(s)
+  if (/^[\w.-]+\.[a-z]{2,}($|\/)/i.test(v)) return `https://${v}`; // bare domain
+  return v; // allow handles like @name
+}
+
+// Build a safe socials object (drops undefined and normalises) // <<< socials
+function buildSocials(s = {}) {
+  if (!s || typeof s !== 'object') return undefined;
+  const out = {
+    website:   s.website   != null ? normaliseUrl(s.website)   : undefined,
+    linkedin:  s.linkedin  != null ? normaliseUrl(s.linkedin)  : undefined,
+    twitter:   s.twitter   != null ? normaliseUrl(s.twitter)   : undefined,
+    instagram: s.instagram != null ? normaliseUrl(s.instagram) : undefined,
+    facebook:  s.facebook  != null ? normaliseUrl(s.facebook)  : undefined,
+    github:    s.github    != null ? normaliseUrl(s.github)    : undefined,
+    other1:    s.other1    != null ? normaliseUrl(s.other1)    : undefined,
+    other2:    s.other2    != null ? normaliseUrl(s.other2)    : undefined,
+  };
+  // remove undefined keys so we don't overwrite existing values with undefined
+  Object.keys(out).forEach((k) => out[k] === undefined && delete out[k]);
+  return Object.keys(out).length ? out : undefined;
+}
 
 // Sync Contact.groups <-> Group.members
 async function syncContactGroupMembership({ session, ownerId, contactId, incomingGroupIds }) {
@@ -97,7 +125,7 @@ function extractConnectionFromPayload(payload = {}) {
   return out;
 }
 
-// ---------- Routes ----------
+/* ------------------------ Routes ------------------------ */
 
 // GET /api/contacts  -> list current user's contacts (supports ?group=<id>)
 router.get('/', async (req, res, next) => {
@@ -140,7 +168,8 @@ router.post('/', async (req, res, next) => {
       city,
       country,
       notes,
-      groups, // optional array of group ids
+      groups,   // optional array of group ids
+      socials,  // <<< socials
     } = payload;
 
     const conn = extractConnectionFromPayload(payload);
@@ -167,6 +196,7 @@ router.post('/', async (req, res, next) => {
             notes,
             groups: [],
             connection: { ...conn },
+            socials: buildSocials(socials), // <<< socials
           },
         ],
         { session }
@@ -227,7 +257,8 @@ router.put('/:id', async (req, res, next) => {
     const payload = req.body || {};
 
     const {
-      groups, // may be undefined; only sync if it's an array
+      groups,   // may be undefined; only sync if it's an array
+      socials,  // <<< socials
       ...rest
     } = payload;
 
@@ -238,6 +269,12 @@ router.put('/:id', async (req, res, next) => {
     await session.withTransaction(async () => {
       // Build $set atomically
       const $set = { ...rest };
+
+      // Merge socials if provided      // <<< socials
+      const normalisedSocials = buildSocials(socials);
+      if (normalisedSocials) {
+        $set.socials = normalisedSocials;
+      }
 
       if (Object.keys(conn).length > 0) {
         const shouldRecompute =
@@ -432,7 +469,6 @@ router.post('/:id/connection/log', async (req, res) => {
 /**
  * GET /api/contacts/due?withinDays=7
  * Returns contacts due now or within N days (excludes snoozed and inactive).
- * (Fix: combine conditions correctly; avoid duplicate top-level $or keys.)
  */
 router.get('/due', async (req, res) => {
   try {

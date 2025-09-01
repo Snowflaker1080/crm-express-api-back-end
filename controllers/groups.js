@@ -2,7 +2,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
-
 const Group = require('../models/Group');
 const Contact = require('../models/Contact');
 const verifyToken = require('../middleware/verify-token');
@@ -34,13 +33,11 @@ async function syncMemberAdds({ session, ownerId, groupId, contactIds = [] }) {
   ).session(session);
 
   const validIds = validContacts.map((c) => c._id);
-
   await Group.updateOne(
     { _id: groupId, owner: ownerId },
     { $addToSet: { members: { $each: validIds } } },
     { session }
   );
-
   await Contact.updateMany(
     { _id: { $in: validIds }, owner: ownerId },
     { $addToSet: { groups: groupId } },
@@ -88,7 +85,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// POST /api/groups -> create a group for current user (optionally with members)
+// POST /api/groups -> create a group for current user
 router.post('/', async (req, res, next) => {
   const session = await mongoose.startSession();
   try {

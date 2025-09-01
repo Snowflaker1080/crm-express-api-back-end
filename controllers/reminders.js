@@ -5,7 +5,6 @@ const Reminder = require('../models/Reminder');
 const Contact = require('../models/Contact');  // if contact ownership is validate
 const verifyToken = require('../middleware/verify-token');
 
-
 router.use(verifyToken);
 
 // GET /api/reminders

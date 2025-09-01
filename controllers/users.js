@@ -19,13 +19,16 @@ router.use((req, res, next) => {
   next();
 });
 
-// GET /api/users - Return only the signed-in user (array shape for list parity)
+// GET /api/users
+// (Kept for parity with any list views you might have. Returns an array with only the signed-in user.)
 router.get('/', async (req, res) => {
   try {
     const user =
-      req.user && req.user.username
+      (req.user && req.user.username)
         ? req.user
-        : await User.findById(req.user._id).select('username email createdAt').lean();
+        : await User.findById(req.user._id)
+            .select('_id username email createdAt')
+            .lean();
 
     if (!user) return res.status(404).json({ error: 'User not found' });
     return res.json([user]);
@@ -34,31 +37,37 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/users/me?include=counts - Robust: clean 401 when unauth, 404 when user missing, never throws on req.user._id
+// GET /api/users/me
+// - Returns the user object directly by default
+// - If ?include=counts is provided, returns { user, counts } instead
 router.get('/me', async (req, res) => {
   try {
-    // parse include param: supports "counts" or "counts,other"
     const includeCounts = (req.query.include || '')
       .toString()
       .split(',')
       .map(s => s.trim().toLowerCase())
       .includes('counts');
 
-    // Prefer user from verifyToken; fallback to fetch
     const user =
-      req.user && req.user.username
+      (req.user && req.user.username)
         ? req.user
-        : await User.findById(req.user._id).select('username email createdAt').lean();
+        : await User.findById(req.user._id)
+            .select('_id username email createdAt')
+            .lean();
 
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    if (!includeCounts) return res.json({ user });
+    if (!includeCounts) {
+      // Return the user object directly (unwrapped)
+      return res.json(user);
+    }
 
     const [groupsCount, contactsCount] = await Promise.all([
       Group.countDocuments({ owner: req.user._id }),
       Contact.countDocuments({ owner: req.user._id }),
     ]);
 
+    // When counts are requested, wrap to include both pieces of data
     return res.json({ user, counts: { groups: groupsCount, contacts: contactsCount } });
   } catch (err) {
     return res.status(500).json({ error: err.message || 'Server error' });
@@ -73,7 +82,7 @@ router.get('/:userId', async (req, res) => {
     if (!mongoose.isValidObjectId(userId)) {
       return res.status(400).json({ error: 'Invalid user id' });
     }
-    if (req.user._id.toString() !== userId) {
+    if (String(req.user._id) !== String(userId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -83,10 +92,12 @@ router.get('/:userId', async (req, res) => {
       .map(s => s.trim().toLowerCase())
       .includes('counts');
 
-    const user = await User.findById(userId).select('username email createdAt').lean();
+    const user = await User.findById(userId)
+      .select('_id username email createdAt')
+      .lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    if (!includeCounts) return res.json({ user });
+    if (!includeCounts) return res.json(user);
 
     const [groupsCount, contactsCount] = await Promise.all([
       Group.countDocuments({ owner: req.user._id }),

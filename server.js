@@ -1,18 +1,19 @@
 // server.js
 const dotenv = require('dotenv');
 dotenv.config();
+
 const express = require('express');
-const morgan = require('morgan')
+const morgan = require('morgan');
 const cors = require('cors');
 const mongoose = require('mongoose');
 
-// Routers - express
-const authRouter = require('./controllers/auth');
-const testJwtRouter = require('./controllers/test-jwt');
-const usersRouter = require('./controllers/users');
-const groupsRouter = require('./controllers/groups');
+// Routers
+const authRouter     = require('./controllers/auth');
+const testJwtRouter  = require('./controllers/test-jwt');
+const usersRouter    = require('./controllers/users');  
+const groupsRouter   = require('./controllers/groups');
 const contactsRouter = require('./controllers/contacts');
-const invitesRouter = require('./controllers/invites'); 
+const invitesRouter  = require('./controllers/invites');
 
 const app = express();
 
@@ -24,7 +25,7 @@ app.use(morgan('dev'));
 // API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/test', testJwtRouter);
-app.use('/api/users', usersRouter);
+app.use('/api/users', usersRouter);       
 app.use('/api/groups', groupsRouter);
 app.use('/api/contacts', contactsRouter);
 app.use('/api/invites', invitesRouter);
@@ -35,52 +36,47 @@ app.use((req, res) => {
 });
 
 // Global Error Handler
-app.use((err, req, res, next) => { // 4 args for Express to treat as error handler
+app.use((err, req, res, next) => {
   console.error(err);
   const status = err.status || 500;
   res.status(status).json({ error: err.message || 'Server error' });
 });
 
-
 // --- Connect to MongoDB + Boot ---
-// MongoDB connection - folder name explicitly stated
 const db_url = process.env.MONGODB_URI;
 if (!db_url) {
-  console.error("Missing MONGODB_URI in environment");
+  console.error('Missing MONGODB_URI in environment');
   process.exit(1);
 }
 
-// enable query + server selection debugging (optional)
 mongoose.set('debug', true);
 
 mongoose
-  .connect(db_url, { 
-    dbName: "OrbitCRMDatabase",
-    serverSelectionTimeoutMS: 15000, // fail faster while debugging
-   })
+  .connect(db_url, {
+    dbName: 'OrbitCRMDatabase',
+    serverSelectionTimeoutMS: 15000,
+  })
   .then(() => {
-    console.log("Connected to MongoDB OrbitCRMDatabase");
+    console.log('Connected to MongoDB OrbitCRMDatabase');
 
-// Boot Express once DB connection is successful
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
       console.log(`Express API listening on port ${PORT}`);
     });
   })
   .catch((err) => {
-    console.error("MongoDB connection error:", err);
+    console.error('MongoDB connection error:', err);
     process.exit(1);
   });
 
-// Connection event logs
-mongoose.connection.on("connected", () => {
+mongoose.connection.on('connected', () => {
   console.log(`Connected to MongoDB ${mongoose.connection.name}.`);
 });
-mongoose.connection.on("error", (e) => {
-  console.error("MongoDB connection error:", e);
+mongoose.connection.on('error', (e) => {
+  console.error('MongoDB connection error:', e);
 });
-mongoose.connection.on("disconnected", () => {
-  console.warn("MongoDB disconnected");
+mongoose.connection.on('disconnected', () => {
+  console.warn('MongoDB disconnected');
 });
 
 module.exports = app;
