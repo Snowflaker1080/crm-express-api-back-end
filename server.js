@@ -12,6 +12,7 @@ const testJwtRouter = require('./controllers/test-jwt');
 const usersRouter = require('./controllers/users');
 const groupsRouter = require('./controllers/groups');
 const contactsRouter = require('./controllers/contacts');
+const invitesRouter = require('./controllers/invites'); 
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use('/api/test', testJwtRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/contacts', contactsRouter);
+app.use('/api/invites', invitesRouter);
 
 // 404 Route
 app.use((req, res) => {

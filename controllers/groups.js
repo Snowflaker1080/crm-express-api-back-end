@@ -28,7 +28,6 @@ const TYPE_ENUM = Group.schema.path('type')?.options?.enum || [];
 async function syncMemberAdds({ session, ownerId, groupId, contactIds = [] }) {
   if (!contactIds.length) return;
 
-  // Validate contacts are owned by the user
   const validContacts = await Contact.find(
     { _id: { $in: contactIds }, owner: ownerId },
     { _id: 1 }
@@ -36,14 +35,12 @@ async function syncMemberAdds({ session, ownerId, groupId, contactIds = [] }) {
 
   const validIds = validContacts.map((c) => c._id);
 
-  // Add contacts to group.members
   await Group.updateOne(
     { _id: groupId, owner: ownerId },
     { $addToSet: { members: { $each: validIds } } },
     { session }
   );
 
-  // Add group to contact.groups
   await Contact.updateMany(
     { _id: { $in: validIds }, owner: ownerId },
     { $addToSet: { groups: groupId } },
@@ -54,7 +51,6 @@ async function syncMemberAdds({ session, ownerId, groupId, contactIds = [] }) {
 async function syncMemberRemoves({ session, ownerId, groupId, contactIds = [] }) {
   if (!contactIds.length) return;
 
-  // Only touch contacts owned by the user
   const validContacts = await Contact.find(
     { _id: { $in: contactIds }, owner: ownerId },
     { _id: 1 }
@@ -62,14 +58,12 @@ async function syncMemberRemoves({ session, ownerId, groupId, contactIds = [] })
 
   const validIds = validContacts.map((c) => c._id);
 
-  // Remove contacts from group.members
   await Group.updateOne(
     { _id: groupId, owner: ownerId },
     { $pull: { members: { $in: validIds } } },
     { session }
   );
 
-  // Remove group from contact.groups
   await Contact.updateMany(
     { _id: { $in: validIds }, owner: ownerId },
     { $pull: { groups: groupId } },
@@ -78,7 +72,6 @@ async function syncMemberRemoves({ session, ownerId, groupId, contactIds = [] })
 }
 
 // --- Meta: expose allowed group types (for UI forms) -----------------------
-// GET /api/groups/meta -> { types: [...] }
 router.get('/meta', (req, res) => {
   return res.json({ types: TYPE_ENUM });
 });
@@ -99,7 +92,7 @@ router.get('/', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   const session = await mongoose.startSession();
   try {
-    const { name, type, members } = req.body || {};
+    const { name, type, description, members } = req.body || {};
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'Name is required' });
     }
@@ -108,40 +101,28 @@ router.post('/', async (req, res, next) => {
     }
 
     const ownerId = req.user._id;
-
-    // Normalise members to valid ObjectIds owned by user
     const initialMemberIds = Array.isArray(members) ? members.filter(isId) : [];
 
     await session.withTransaction(async () => {
       const doc = await Group.create(
-        [
-          {
-            name: name.trim(),
-            ...(type ? { type: String(type).trim() } : {}),
-            owner: ownerId,
-            // don't directly trust incoming members; we'll sync below
-          },
-        ],
+        [{
+          name: name.trim(),
+          ...(type ? { type: String(type).trim() } : {}),
+          ...(typeof description === 'string' ? { description: description.trim() } : {}),
+          owner: ownerId,
+        }],
         { session }
       );
 
       const group = doc[0];
       if (initialMemberIds.length) {
-        await syncMemberAdds({
-          session,
-          ownerId,
-          groupId: group._id,
-          contactIds: initialMemberIds,
-        });
+        await syncMemberAdds({ session, ownerId, groupId: group._id, contactIds: initialMemberIds });
       }
 
-      const saved = await Group.findOne({ _id: group._id, owner: ownerId })
-        .lean()
-        .session(session);
+      const saved = await Group.findOne({ _id: group._id, owner: ownerId }).lean().session(session);
       return res.status(201).json(saved);
     });
   } catch (err) {
-    // Common Mongoose validation/cast errors → 400
     if (err?.name === 'ValidationError' || err?.name === 'CastError') {
       return res.status(400).json({ error: err.message });
     }
@@ -174,7 +155,7 @@ router.put('/:id', async (req, res, next) => {
     if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({ error: 'Invalid id' });
     }
-    const { name, type, members } = req.body || {};
+    const { name, type, description, members } = req.body || {};
     const ownerId = req.user._id;
 
     if (typeof type === 'string' && !TYPE_ENUM.includes(String(type).trim())) {
@@ -183,15 +164,14 @@ router.put('/:id', async (req, res, next) => {
 
     await session.withTransaction(async () => {
       const existing = await Group.findOne({ _id: id, owner: ownerId })
-        .select('_id name type members owner')
+        .select('_id name type description members owner')
         .session(session);
       if (!existing) return res.status(404).json({ error: 'Not found' });
 
-      // Basic field updates
       if (typeof name === 'string') existing.name = name.trim();
       if (typeof type === 'string') existing.type = type.trim();
+      if (typeof description === 'string') existing.description = description.trim();
 
-      // If members array is provided, diff and sync both sides
       if (Array.isArray(members)) {
         const incoming = members.filter(isId).map(toIdStr);
         const current = (existing.members || []).map(toIdStr);
@@ -199,20 +179,10 @@ router.put('/:id', async (req, res, next) => {
         const toRemove = current.filter((m) => !incoming.includes(m));
 
         if (toAdd.length) {
-          await syncMemberAdds({
-            session,
-            ownerId,
-            groupId: existing._id,
-            contactIds: toAdd,
-          });
+          await syncMemberAdds({ session, ownerId, groupId: existing._id, contactIds: toAdd });
         }
         if (toRemove.length) {
-          await syncMemberRemoves({
-            session,
-            ownerId,
-            groupId: existing._id,
-            contactIds: toRemove,
-          });
+          await syncMemberRemoves({ session, ownerId, groupId: existing._id, contactIds: toRemove });
         }
       }
 
@@ -248,7 +218,6 @@ router.delete('/:id', async (req, res, next) => {
       ).lean();
       if (!group) return res.status(404).json({ error: 'Not found' });
 
-      // Clean up the inverse relation on contacts
       await Contact.updateMany(
         { _id: { $in: group.members || [] }, owner: ownerId },
         { $pull: { groups: id } },
@@ -264,9 +233,7 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
-// --- Convenience endpoints to add/remove a single member ---
-
-// POST /api/groups/:groupId/members/:contactId  -> add one contact to group
+// --- Convenience endpoints: single add/remove ------------------------------
 router.post('/:groupId/members/:contactId', async (req, res, next) => {
   const session = await mongoose.startSession();
   try {
@@ -295,7 +262,6 @@ router.post('/:groupId/members/:contactId', async (req, res, next) => {
   }
 });
 
-// DELETE /api/groups/:groupId/members/:contactId -> remove one contact from group
 router.delete('/:groupId/members/:contactId', async (req, res, next) => {
   const session = await mongoose.startSession();
   try {
@@ -324,9 +290,7 @@ router.delete('/:groupId/members/:contactId', async (req, res, next) => {
   }
 });
 
-// --- Bulk add members in one shot -----------------------------------------
-// POST /api/groups/:groupId/members
-// body: { contactIds: ["id1","id2", ...] }
+// --- Bulk add/remove in one shot ------------------------------------------
 router.post('/:groupId/members', async (req, res, next) => {
   const session = await mongoose.startSession();
   try {
@@ -337,7 +301,6 @@ router.post('/:groupId/members', async (req, res, next) => {
     }
     const ownerId = req.user._id;
 
-    // normalise & dedupe ids, keep only valid ObjectId strings
     const ids = Array.from(new Set(contactIds.filter(isId).map(toIdStr)));
     if (!ids.length) return res.status(400).json({ error: 'No valid contactIds' });
 
@@ -357,9 +320,6 @@ router.post('/:groupId/members', async (req, res, next) => {
   }
 });
 
-// --- Bulk remove members in one shot --------------------------------------
-// DELETE /api/groups/:groupId/members
-// body: { contactIds: ["id1","id2", ...] }
 router.delete('/:groupId/members', async (req, res, next) => {
   const session = await mongoose.startSession();
   try {
